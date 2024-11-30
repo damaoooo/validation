@@ -7,7 +7,7 @@ class LanguageSpec(Enum):
     python = ["poetry.lock", "pyproject.toml"]
     rust = ["Cargo.lock", "Cargo.toml"]
     javascript = ["package-lock.json", "package.json"]
-    ruby = ["Gemfile.lock", "Gemfile"]
+    ruby = ["Gemfile.lock", "Gemfile", ".gemspec"]
     php = ["composer.lock", "composer.json"]
 
     @property
@@ -40,7 +40,7 @@ def print_stat_table():
     # 遍历 LanguageSpec 枚举，统计文件数量并添加到表格中
     for lang in LanguageSpec:
         name = lang.name
-        lock_file, proj_file = lang.file_names
+        lock_file, proj_file = lang.file_names[:2]
         proj_file_count, lock_file_count, both_files_count = count_files(name, proj_file, lock_file)
         table.add_row([name, proj_file_count, lock_file_count, both_files_count, proj_file_count + lock_file_count + both_files_count])
 

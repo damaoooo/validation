@@ -18,6 +18,7 @@ awesome_dict = {
 
 def download_git_repo():
     for lang, url in awesome_dict.items():
+        
         parser = MarkdownParser(url)
         token = get_git_token()
         crawler = GitHubCrawler(token, LanguageSpec[lang])
@@ -30,17 +31,17 @@ def run_sbom_tools(language: LanguageSpec):
     trivy = Trivy()
     output_dir = os.path.join("sbom", language.name)
     comparer = SBOMComparer(trivy=trivy, syft=syft, output_dir=output_dir)
-    cargo_files = []
+    lock_files = []
     # os walk a folder
     for root, dirs, files in os.walk(language.name):
         for file in files:
             if file == language.file_names[0]:
                 input_file = os.path.join(root, file)
-                cargo_files.append(input_file)
+                lock_files.append(input_file)
 
     with Pool(processes=os.cpu_count()) as pool:
-        with tqdm(total=len(cargo_files)) as pbar:
-            for left_only, right_only, common in pool.imap_unordered(comparer.compare, cargo_files):
+        with tqdm(total=len(lock_files)) as pbar:
+            for left_only, right_only, common in pool.imap_unordered(comparer.compare, lock_files):
                 pbar.update()
 
 def javascript_fix(input_file: str, left: list, right: list, common: list):
