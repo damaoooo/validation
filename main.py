@@ -48,7 +48,7 @@ def javascript_fix(input_file: str, left: list, right: list, common: list):
     with open(input_file) as f:
         data = json.load(f)
     
-    self_name = data["name"]
+    self_name: str = data["name"]
     # Self Package
     left = [x for x in left if x["name"] != self_name]
     right = [x for x in right if x["name"] != self_name]

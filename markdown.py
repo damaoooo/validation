@@ -17,7 +17,6 @@ class MarkdownParser:
     def parse(self, markdown: str) -> list[str]:
         # parse the markdown content
         # return a list of URLs
-        result = []
         
         def is_github_repository(url):
             # Match Github Repository URL

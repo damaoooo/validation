@@ -8,6 +8,13 @@ import asyncio
 import aiohttp
 from utils import LanguageSpec, get_git_token
 from enum import Enum
+from git import Repo
+
+def clone_repo(repo_url, clone_dir):
+    # Clone dir should be user_name/repo_name
+    repo = Repo.clone_from(repo_url, clone_dir)
+    repo.submodule_update(recursive=True)
+    
 
 # 设置参数
 
@@ -177,16 +184,16 @@ class GitHubCrawler:
 
 if __name__ == "__main__":
     
-    markdown_page = "https://raw.githubusercontent.com/vinta/awesome-python/refs/heads/master/README.md"
-    parser = MarkdownParser(markdown_page)
+    # markdown_page = "https://raw.githubusercontent.com/vinta/awesome-python/refs/heads/master/README.md"
+    # parser = MarkdownParser(markdown_page)
     
-    token = get_git_token()
-    crawler = GitHubCrawler(token, LanguageSpec.python)
+    # token = get_git_token()
+    # crawler = GitHubCrawler(token, LanguageSpec.python)
     
-    all_result = crawler.fetch_all_urls(parser.url_list)
-    crawler.save_urls(all_result)
+    # all_result = crawler.fetch_all_urls(parser.url_list)
+    # crawler.save_urls(all_result)
     
-    
+    clone_repo("https://github.com/openembedded/bitbake", "./bitbake")
 
     
 
