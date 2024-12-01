@@ -1,22 +1,17 @@
 from crawler import GitHubCrawler, MarkdownParser
 from sbom_test import SBOMComparer, Trivy, Syft
 import os
-from utils import LanguageSpec, get_git_token
+from utils import LanguageSpec, get_git_token, awesome_dict
 import json
 from multiprocessing import Pool, Manager
 from tqdm import tqdm
 import numpy as np
+import shutil
 
 
-awesome_dict = {
-    "python": "https://raw.githubusercontent.com/vinta/awesome-python/refs/heads/master/README.md",
-    "rust": "https://raw.githubusercontent.com/rust-unofficial/awesome-rust/refs/heads/main/README.md",
-    "javascript": "https://raw.githubusercontent.com/sorrycc/awesome-javascript/refs/heads/master/README.md",
-    "ruby": "https://raw.githubusercontent.com/markets/awesome-ruby/refs/heads/master/README.md",
-    "php": "https://raw.githubusercontent.com/ziadoz/awesome-php/refs/heads/master/README.md"
-}
 
-def download_git_repo():
+
+def download_git_file():
     for lang, url in awesome_dict.items():
         
         parser = MarkdownParser(url)
@@ -25,15 +20,26 @@ def download_git_repo():
         all_result = crawler.fetch_all_urls(parser.url_list)
         crawler.save_urls(all_result)
             
+
+def download_git_repo():
+    for lang, url in awesome_dict.items():
+        
+        parser = MarkdownParser(url)
+        token = get_git_token()
+        crawler = GitHubCrawler(token, LanguageSpec[lang])
+        all_result = crawler.fetch_all_urls(parser.url_list)
+        crawler.download_repos(all_result)
     
-def run_sbom_tools(language: LanguageSpec):
+def run_sbom_tools(language: LanguageSpec, target_dir: str = "sbom"):
     syft = Syft()
     trivy = Trivy()
-    output_dir = os.path.join("sbom", language.name)
+    output_dir = os.path.join(target_dir, language.name)
     comparer = SBOMComparer(trivy=trivy, syft=syft, output_dir=output_dir)
     lock_files = []
     # os walk a folder
     for root, dirs, files in os.walk(language.name):
+        if root[len(language.name):].count(os.sep) > 2:
+            continue
         for file in files:
             if file == language.file_names[0]:
                 input_file = os.path.join(root, file)
@@ -77,9 +83,10 @@ def javascript_fix(input_file: str, left: list, right: list, common: list):
     return new_left, new_right, common
 
 
-def analyse_sbom_diff_result(language: LanguageSpec):
+def analyse_sbom_diff_result(language: LanguageSpec, target_dir: str = "sbom"):
     jaccords = []
-    output_folder = os.path.join("sbom", language.name, "diff")
+    
+    output_folder = os.path.join(target_dir, language.name, "diff")
     for root, dirs, files in os.walk(output_folder):
         for file in files:
             if file.endswith(".json"):
@@ -106,7 +113,14 @@ def analyse_sbom_diff_result(language: LanguageSpec):
 
 if __name__ == "__main__":
     # download_git_repo()
+    target_dir = "sbom"
+
+    # Empty the target directory
+    shutil.rmtree(target_dir, ignore_errors=True)
+        
     for language in LanguageSpec:
-        run_sbom_tools(language)
-        mean, std = analyse_sbom_diff_result(language)
+
+        
+        run_sbom_tools(language, target_dir=target_dir)
+        mean, std = analyse_sbom_diff_result(language, target_dir=target_dir)
         print("Language:", language.name, "Mean:", mean, "Std:", std)

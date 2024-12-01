@@ -188,6 +188,11 @@ class SBOMComparer:
         Returns:
             Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]: Trivy-only, Syft-only, and common packages.
         """
+        # if it is a symbolic link, get the real path
+        if os.path.islink(input_file):
+            input_file = os.path.realpath(input_file)
+            
+        
         # get the absolute path of the input file
         input_file = os.path.abspath(input_file)
 

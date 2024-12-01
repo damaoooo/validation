@@ -14,6 +14,13 @@ class LanguageSpec(Enum):
     def file_names(self) -> List[str]:
         return self.value
     
+awesome_dict = {
+    "python": "https://raw.githubusercontent.com/vinta/awesome-python/refs/heads/master/README.md",
+    "rust": "https://raw.githubusercontent.com/rust-unofficial/awesome-rust/refs/heads/main/README.md",
+    "javascript": "https://raw.githubusercontent.com/sorrycc/awesome-javascript/refs/heads/master/README.md",
+    "ruby": "https://raw.githubusercontent.com/markets/awesome-ruby/refs/heads/master/README.md",
+    "php": "https://raw.githubusercontent.com/ziadoz/awesome-php/refs/heads/master/README.md"
+}
     
 def count_files(root_dir, proj_file: str, lock_file: str):
     proj_file_count = 0
@@ -21,6 +28,9 @@ def count_files(root_dir, proj_file: str, lock_file: str):
     both_files_count = 0
 
     for dirpath, dirnames, filenames in os.walk(root_dir):
+        current_depth = dirpath[len(root_dir):].count(os.sep)
+        if current_depth >= 2:
+            dirnames[:] = []
         has_cargo_toml = proj_file.lower() in [x.lower() for x in filenames]
         has_cargo_lock = lock_file.lower() in [x.lower() for x in filenames]
 
