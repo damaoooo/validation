@@ -1,17 +1,15 @@
 import os
 
-# 给定的文件路径
-file_path = 'sbom/python/raw/trivy_root_workspace_validation_python_nicfit_eyeD3_0.9.x_poetry.lock.json'
+def extract_first_level_directory(path, base='/repo'):
+    # 获取相对路径
+    relative_path = os.path.relpath(path, base)
+    # 拆分路径为各级目录
+    parts = relative_path.split(os.sep)
+    # 返回第一级目录名称
+    return parts[0] if parts else None
 
-# 获取上一级目录
-parent_dir = os.path.dirname(file_path)
-
-# 获取上上一级目录
-grandparent_dir = os.path.dirname(parent_dir)
-
-# 提取上一级和上上一级目录的名称
-parent_dir_name = os.path.basename(parent_dir)
-grandparent_dir_name = os.path.basename(os.path.dirname(os.path.dirname(file_path)))
-
-print(f"上一级目录名称: {parent_dir_name}")
-print(f"上上一级目录名称: {grandparent_dir_name}")
+# 示例路径
+path = '/repo/javascript/kriskowal/q/package-lock.json'
+# 提取第一级目录名称
+first_level_dir = extract_first_level_directory(path)
+print(first_level_dir)  # 输出：javascript

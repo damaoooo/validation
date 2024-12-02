@@ -1,15 +1,19 @@
 from crawler import GitHubCrawler, MarkdownParser
-from sbom_test import SBOMComparer, Trivy, Syft
+from sbom import SBOMComparer, Trivy, Syft, SBOM, Package, analyze_difference
 import os
-from utils import LanguageSpec, get_git_token, awesome_dict
+from utils import LanguageSpec, get_git_token, awesome_dict, parse_ground_truth
 import json
 from multiprocessing import Pool, Manager
 from tqdm import tqdm
 import numpy as np
 import shutil
+import pandas as pd
 
 
-
+def load_json(file_path: str):
+    with open(file_path) as f:
+        data = json.load(f)
+    return data
 
 def download_git_file():
     for lang, url in awesome_dict.items():
@@ -30,14 +34,17 @@ def download_git_repo():
         all_result = crawler.fetch_all_urls(parser.url_list)
         crawler.download_repos(all_result)
     
-def run_sbom_tools(language: LanguageSpec, target_dir: str = "sbom"):
+def run_sbom_tools(language: LanguageSpec, target_dir: str = "/sbom", repo_path: str = "/repo"):
     syft = Syft()
     trivy = Trivy()
     output_dir = os.path.join(target_dir, language.name)
+    
+    shutil.rmtree(output_dir, ignore_errors=True)
+    
     comparer = SBOMComparer(trivy=trivy, syft=syft, output_dir=output_dir)
     lock_files = []
     # os walk a folder
-    for root, dirs, files in os.walk(language.name):
+    for root, dirs, files in os.walk(os.path.join(repo_path, language.name)):
         if root[len(language.name):].count(os.sep) > 2:
             continue
         for file in files:
@@ -49,6 +56,9 @@ def run_sbom_tools(language: LanguageSpec, target_dir: str = "sbom"):
         with tqdm(total=len(lock_files)) as pbar:
             for left_only, right_only, common in pool.imap_unordered(comparer.compare, lock_files):
                 pbar.update()
+    
+    # for lock_file in lock_files:
+    #     comparer.compare(lock_file, save=True)
 
 def javascript_fix(input_file: str, left: list, right: list, common: list):
     with open(input_file) as f:
@@ -83,7 +93,7 @@ def javascript_fix(input_file: str, left: list, right: list, common: list):
     return new_left, new_right, common
 
 
-def analyse_sbom_diff_result(language: LanguageSpec, target_dir: str = "sbom"):
+def analyse_sbom_diff_jaccard(language: LanguageSpec, target_dir: str = "sbom"):
     jaccords = []
     
     output_folder = os.path.join(target_dir, language.name, "diff")
@@ -111,16 +121,58 @@ def analyse_sbom_diff_result(language: LanguageSpec, target_dir: str = "sbom"):
                     
     return np.mean(jaccords), np.std(jaccords)
 
+def compute_accuracy(language: LanguageSpec, target_dir: str = "sbom"):
+    
+    left_len = []
+    right_len = []
+    common_len = []
+    
+    if language not in [LanguageSpec.javascript, LanguageSpec.python, LanguageSpec.ruby, LanguageSpec.php, LanguageSpec.rust]:
+        raise ValueError("Language not supported")
+    
+    output_folder = os.path.join(target_dir, language.name, "diff")
+    for root, dirs, files in os.walk(output_folder):
+        for file in files:
+            if file.endswith(".json"):
+                content = load_json(os.path.join(root, file))
+                left = content["left"]
+                right = content["right"]
+                common = content["common"]
+                
+                if not common:
+                    continue
+                
+                origin_file = content["input_file"]
+                ground_truth = parse_ground_truth(origin_file, language)
+                
+                common_df = SBOM(common)
+                ground_truth_df = SBOM(ground_truth)
+                left, right, common = analyze_difference(common_df, ground_truth_df)
+                
+                left_len.append(len(left))
+                right_len.append(len(right))
+                common_len.append(len(common))
+                
+                if len(left) != 0 or len(right) != 0:
+                    print("left:", left, "right:", right)
+                
+    return np.sum(left_len), np.sum(right_len), np.sum(common_len)
+
 if __name__ == "__main__":
     # download_git_repo()
-    target_dir = "sbom"
+    target_dir = "/sbom"
 
     # Empty the target directory
-    shutil.rmtree(target_dir, ignore_errors=True)
-        
     for language in LanguageSpec:
-
         
+        if language != LanguageSpec.javascript:
+            continue
+        
+        if language == LanguageSpec.javascript:
+            print("DEBUG")
         run_sbom_tools(language, target_dir=target_dir)
-        mean, std = analyse_sbom_diff_result(language, target_dir=target_dir)
+        mean, std = analyse_sbom_diff_jaccard(language, target_dir=target_dir)
         print("Language:", language.name, "Mean:", mean, "Std:", std)
+        
+        left, right, common = compute_accuracy(language, target_dir=target_dir)
+        print("Language:", language.name, "Left:", left, "Right:", right, "Common:", common)

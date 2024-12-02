@@ -2,10 +2,28 @@ import os
 import json
 import pandas as pd
 from dataclasses import dataclass
-from typing import List, Tuple
+from typing import List, Tuple, Union
 import subprocess
 import traceback 
 
+
+def remove_node_modules_prefix(file_path: str):
+    with open(file_path, 'r', encoding='utf-8') as file:
+        data = json.load(file)
+
+    if 'packages' in data:
+        packages = data['packages']
+        updated_packages = {}
+        for key, value in packages.items():
+            new_key = key.replace('node_modules/', '', 1) if key.startswith('node_modules/') else key
+            updated_packages[new_key] = value
+        data['packages'] = updated_packages
+        # not remove, but add the new key
+        # data['packages'] = {**packages, **updated_packages}
+
+        with open(file_path, 'w', encoding='utf-8') as file:
+            json.dump(data, file, ensure_ascii=False, indent=2)
+    
 
 @dataclass
 class Package:
@@ -29,8 +47,11 @@ class Package:
 class SBOM:
     """Represents a Software Bill of Materials (SBOM)."""
 
-    def __init__(self, packages: List[Package]):
+    def __init__(self, packages: Union[List[Package], List[dict]]):
         self.packages = packages
+
+        if isinstance(self.packages, list) and all(isinstance(p, dict) for p in self.packages):
+            self.packages = [Package(**p) for p in self.packages]
 
     def to_dataframe(self) -> pd.DataFrame:
         """Converts the SBOM packages to a pandas DataFrame."""
@@ -83,6 +104,9 @@ class Syft(SBOMTool):
 
 def parse_cyclonedx(file_path: str) -> SBOM:
     """Parses a CycloneDX JSON file into an SBOM."""
+
+    language_folder_name = os.path.basename(os.path.dirname(os.path.dirname(file_path))).lower()
+    
     with open(file_path, "r") as f:
         data: dict = json.load(f)
 
@@ -90,14 +114,11 @@ def parse_cyclonedx(file_path: str) -> SBOM:
     for component in data.get("components", []):
         if "name" in component and "version" in component:
             name = component["name"].strip()
-            language_folder_name = os.path.basename(os.path.dirname(os.path.dirname(file_path))).lower()
-            # FIXME: for Javascript, Syft takes itself as a packet and locals, remove it, but this is for all
+
             if "javascript" == language_folder_name:
                 continue
             
             version = component["version"].strip()
-            # remove 1.16.7-arm64-darwin the arch part
-            # FIXME: for Ruby, remove the platform version, but this is for all
             if "-" in version and "ruby" == language_folder_name:
                 version = version[:version.index("-")]
                 
@@ -192,6 +213,17 @@ class SBOMComparer:
         if os.path.islink(input_file):
             input_file = os.path.realpath(input_file)
             
+        def extract_first_level_directory(path, base='/repo'):
+            # 获取相对路径
+            relative_path = os.path.relpath(path, base)
+            # 拆分路径为各级目录
+            parts = relative_path.split(os.sep)
+            # 返回第一级目录名称
+            return parts[0] if parts else None
+        
+        language = extract_first_level_directory(input_file)
+        # if language == "javascript":
+        #     remove_node_modules_prefix(input_file)
         
         # get the absolute path of the input file
         input_file = os.path.abspath(input_file)
