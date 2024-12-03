@@ -133,10 +133,10 @@ class LockGenerator:
                                 stderr=subprocess.PIPE,
                                 text=True
                             )
-                            logger.debug(f"{get_emoji('DEBUG')} npm install output: {npm_result.stdout.strip()}")
+                            logger.debug(f"{get_emoji('DEBUG')} yarn install output: {npm_result.stdout.strip()}")
                         except subprocess.CalledProcessError as e:
                             stderr = e.stderr.strip()
-                            logger.error(f"{get_emoji('ERROR')} npm install failed: {pwd}:\n{stderr}")
+                            logger.error(f"{get_emoji('ERROR')} yarn install failed: {pwd}:\n{stderr}")
                             return False
                     case LanguageSpec.ruby:
                         logger.info(f"{get_emoji('LOCK')} Generating Bundler lock file 🗝️")

@@ -9,7 +9,7 @@ from prettytable import PrettyTable
 class LanguageSpec(Enum):
     python = ["poetry.lock", "pyproject.toml"]
     rust = ["Cargo.lock", "Cargo.toml"]
-    javascript = ["package-lock.json", "package.json"]
+    # javascript = ["yarn.lock", "package.json"]
     ruby = ["Gemfile.lock", "Gemfile", ".gemspec"]
     php = ["composer.lock", "composer.json"]
 
@@ -121,8 +121,8 @@ def parse_ground_truth(path: str, language: LanguageSpec):
         return read_poetry_lock(path)
     elif language == LanguageSpec.rust:
         return read_cargo_lock(path)
-    elif language == LanguageSpec.javascript:
-        return read_npm_lock(path)
+    # elif language == LanguageSpec.javascript:
+    #     return read_npm_lock(path)
     elif language == LanguageSpec.ruby:
         return read_gemfile_lock(path)
     elif language == LanguageSpec.php:

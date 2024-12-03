@@ -39,13 +39,12 @@ def run_sbom_tools(language: LanguageSpec, target_dir: str = "/sbom", repo_path:
     trivy = Trivy()
     output_dir = os.path.join(target_dir, language.name)
     
-    shutil.rmtree(output_dir, ignore_errors=True)
     
     comparer = SBOMComparer(trivy=trivy, syft=syft, output_dir=output_dir)
     lock_files = []
     # os walk a folder
     for root, dirs, files in os.walk(os.path.join(repo_path, language.name)):
-        if root[len(language.name):].count(os.sep) > 2:
+        if root[len(repo_path):].count(os.sep) > 3:
             continue
         for file in files:
             if file == language.file_names[0]:
@@ -93,7 +92,7 @@ def javascript_fix(input_file: str, left: list, right: list, common: list):
     return new_left, new_right, common
 
 
-def analyse_sbom_diff_jaccard(language: LanguageSpec, target_dir: str = "sbom"):
+def analyse_sbom_diff_jaccard(language: LanguageSpec, target_dir: str = "/sbom"):
     jaccords = []
     
     output_folder = os.path.join(target_dir, language.name, "diff")
@@ -106,8 +105,8 @@ def analyse_sbom_diff_jaccard(language: LanguageSpec, target_dir: str = "sbom"):
                     right = data["right"]
                     common = data["common"]
                     
-                    if language == LanguageSpec.javascript:
-                        left, right, common = javascript_fix(data["input_file"], left, right, common)
+                    # if language == LanguageSpec.javascript:
+                        # left, right, common = javascript_fix(data["input_file"], left, right, common)
                     
                     try:
                         jaccord = len(common) / (len(left) + len(right) + len(common))
@@ -127,7 +126,7 @@ def compute_accuracy(language: LanguageSpec, target_dir: str = "sbom"):
     right_len = []
     common_len = []
     
-    if language not in [LanguageSpec.javascript, LanguageSpec.python, LanguageSpec.ruby, LanguageSpec.php, LanguageSpec.rust]:
+    if language not in list(LanguageSpec):
         raise ValueError("Language not supported")
     
     output_folder = os.path.join(target_dir, language.name, "diff")
@@ -145,6 +144,11 @@ def compute_accuracy(language: LanguageSpec, target_dir: str = "sbom"):
                 origin_file = content["input_file"]
                 ground_truth = parse_ground_truth(origin_file, language)
                 
+                if language == LanguageSpec.ruby:
+                    # Ruby specific fix
+                    ground_truth = [{**pkg, "version": pkg["version"].split("-")[0]} if "-" in pkg["version"] else pkg for pkg in ground_truth]
+
+                
                 common_df = SBOM(common)
                 ground_truth_df = SBOM(ground_truth)
                 left, right, common = analyze_difference(common_df, ground_truth_df)
@@ -153,23 +157,19 @@ def compute_accuracy(language: LanguageSpec, target_dir: str = "sbom"):
                 right_len.append(len(right))
                 common_len.append(len(common))
                 
-                if len(left) != 0 or len(right) != 0:
-                    print("left:", left, "right:", right)
+                # if len(left) != 0 or len(right) != 0:
+                #     print("left:", left, "right:", right)
                 
     return np.sum(left_len), np.sum(right_len), np.sum(common_len)
 
 if __name__ == "__main__":
     # download_git_repo()
     target_dir = "/sbom"
+    shutil.rmtree(target_dir, ignore_errors=True)
 
     # Empty the target directory
     for language in LanguageSpec:
         
-        if language != LanguageSpec.javascript:
-            continue
-        
-        if language == LanguageSpec.javascript:
-            print("DEBUG")
         run_sbom_tools(language, target_dir=target_dir)
         mean, std = analyse_sbom_diff_jaccard(language, target_dir=target_dir)
         print("Language:", language.name, "Mean:", mean, "Std:", std)
