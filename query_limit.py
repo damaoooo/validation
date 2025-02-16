@@ -1,4 +1,5 @@
 import requests
+import datetime
 from utils import get_git_token
 
 def get_rate_limit_status(token=None):
@@ -9,7 +10,13 @@ def get_rate_limit_status(token=None):
     
     response = requests.get(url, headers=headers)
     if response.status_code == 200:
-        return response.json()
+        ret = response.json()
+        used = ret["resources"]["core"]["used"]
+        limit = ret["resources"]["core"]["limit"]
+        remaining = ret["resources"]["core"]["remaining"]
+        reset = ret["resources"]["core"]["reset"]
+        reset_time = datetime.datetime.fromtimestamp(reset)
+        print(f"used: {used}, limit: {limit}, remaining: {remaining}, reset: {reset_time}")
     else:
         raise Exception(f"Failed to fetch rate limit status: {response.status_code}")
 
@@ -17,5 +24,5 @@ def get_rate_limit_status(token=None):
 if __name__ == "__main__":
     # 如果有 GitHub 个人访问令牌，请将其替换到下面的字符串中
     token = get_git_token()
-    rate_limit_status = get_rate_limit_status(token)
-    print(rate_limit_status)
+    get_rate_limit_status(token)
+

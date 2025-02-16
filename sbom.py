@@ -4,8 +4,9 @@ import pandas as pd
 from dataclasses import dataclass
 from typing import List, Tuple, Union
 import subprocess
+import re
 import traceback 
-
+from utils import SBOMStandard
 
 def remove_node_modules_prefix(file_path: str):
     with open(file_path, 'r', encoding='utf-8') as file:
@@ -69,20 +70,29 @@ class SBOM:
 
 
 class SBOMTool:
-    def __init__(self, name: str):
+    def __init__(self, name: str, standard: SBOMStandard = SBOMStandard.cyclonedx):
         self.name = name
+        self.standard = standard
 
     def run(self, input_path: str, output_path: str):
         raise NotImplementedError("Subclasses must implement this method.")
-    
 
 class Trivy(SBOMTool):
-    def __init__(self):
-        super().__init__("Trivy")
+    def __init__(self, standard: SBOMStandard = SBOMStandard.cyclonedx):
+        super().__init__("Trivy", standard)
 
     def run(self, input_path: str, output_path: str):
         # "/root/workspace/trivy/cmd/trivy/trivy"
-        cmd = ["/root/workspace/trivy/cmd/trivy/trivy", "fs", "--format", "cyclonedx", "--output", output_path, input_path, "-q"]
+
+        match self.standard:
+            case SBOMStandard.spdx:
+                format_string = "spdx-json"
+            case SBOMStandard.cyclonedx:
+                format_string = "cyclonedx"
+            case _:
+                raise ValueError(f"Unsupported standard: {self.standard}")
+
+        cmd = ["/root/workspace/trivy/cmd/trivy/trivy", "fs", "--format", format_string, "--output", output_path, input_path, "-q"]
         try:
             result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, text=True)
         except subprocess.CalledProcessError as e:
@@ -91,11 +101,19 @@ class Trivy(SBOMTool):
 
 
 class Syft(SBOMTool):
-    def __init__(self):
-        super().__init__("Syft")
+    def __init__(self, standard: SBOMStandard = SBOMStandard.cyclonedx):
+        super().__init__("Syft", standard)
 
     def run(self, input_path: str, output_path: str):
-        cmd = ["syft", "scan", input_path, "-o", f"cyclonedx-json={output_path}", "-q"]
+        match self.standard:
+            case SBOMStandard.spdx:
+                format_string = "spdx-json"
+            case SBOMStandard.cyclonedx:
+                format_string = "cyclonedx-json"
+            case _:
+                raise ValueError(f"Unsupported standard: {self.standard}")
+
+        cmd = ["syft", "scan", input_path, "-o", f"{format_string}={output_path}", "-q"]
         try:
             result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, text=True)
         except subprocess.CalledProcessError as e:
@@ -124,6 +142,41 @@ def parse_cyclonedx(file_path: str) -> SBOM:
                 
             packages.append(Package(name, version))
     return SBOM(packages)
+
+
+def parse_spdx(file_path: str) -> SBOM:
+    """Parses a SPDX JSON file into an SBOM."""
+    with open(file_path, "r") as f:
+        data: dict = json.load(f)
+
+    language_folder_name = os.path.basename(os.path.dirname(os.path.dirname(file_path))).lower()
+
+    packages = []
+    for package in data.get("packages", []):
+        name = package.get("name", "").strip()
+        version = package.get("versionInfo", "").strip()
+
+        if "javascript" == language_folder_name:
+            continue
+
+        if "-" in version and "ruby" == language_folder_name:
+            version = version[:version.index("-")]
+
+        if "rust" == language_folder_name and name.endswith("Cargo.lock"):
+            continue
+
+        if "python" == language_folder_name and name.endswith("poetry.lock"):
+            continue
+
+        if "ruby" == language_folder_name and (name.endswith("Gemfile.lock") or re.match(r".*Gemfile\.\d+-\d+\.lock$", name)):
+            continue
+
+        if "php" == language_folder_name and name.endswith("composer.lock"):
+            continue
+
+        packages.append(Package(name, version))
+    return SBOM(packages)
+    
 
 
 def analyze_difference(
@@ -238,8 +291,15 @@ class SBOMComparer:
         self.syft.run(input_file, syft_output_json_path)
 
         # Parse SBOMs
-        trivy_sbom: SBOM = parse_cyclonedx(trivy_output_json_path)
-        syft_sbom: SBOM = parse_cyclonedx(syft_output_json_path)
+        if self.trivy.standard == SBOMStandard.cyclonedx:   
+            trivy_sbom: SBOM = parse_cyclonedx(trivy_output_json_path)
+        elif self.trivy.standard == SBOMStandard.spdx:
+            trivy_sbom: SBOM = parse_spdx(trivy_output_json_path)
+
+        if self.syft.standard == SBOMStandard.cyclonedx:
+            syft_sbom: SBOM = parse_cyclonedx(syft_output_json_path)
+        elif self.syft.standard == SBOMStandard.spdx:
+            syft_sbom: SBOM = parse_spdx(syft_output_json_path)
 
         # Compare SBOMs
         try:
@@ -281,10 +341,11 @@ class SBOMComparer:
 
 
 if __name__ == "__main__":
-    trivy = Trivy()
-    syft = Syft()
+    standard = SBOMStandard.spdx
+    trivy = Trivy(standard=standard)
+    syft = Syft(standard=standard)
     comparer = SBOMComparer(trivy=trivy, syft=syft)
-    left_only, right_only, common = comparer.compare(input_file="/root/workspace/sbom-benchmark/rust/cargo/Cargo.lock", save=True)
+    left_only, right_only, common = comparer.compare(input_file="./example/Cargo.lock", save=True)
 
     print("Trivy-only packages:")
     print(left_only)

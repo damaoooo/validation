@@ -8,6 +8,7 @@ from tqdm import tqdm
 import numpy as np
 import shutil
 import pandas as pd
+from sbom import SBOMStandard
 
 
 def load_json(file_path: str):
@@ -34,9 +35,9 @@ def download_git_repo():
         all_result = crawler.fetch_all_urls(parser.url_list)
         crawler.download_repos(all_result)
     
-def run_sbom_tools(language: LanguageSpec, target_dir: str = "/sbom", repo_path: str = "/repo"):
-    syft = Syft()
-    trivy = Trivy()
+def run_sbom_tools(language: LanguageSpec, target_dir: str = "/sbom", repo_path: str = "/repo", standard: str = "cyclonedx"):
+    syft = Syft(standard=standard)
+    trivy = Trivy(standard=standard)
     output_dir = os.path.join(target_dir, language.name)
     
     
@@ -165,12 +166,13 @@ def compute_accuracy(language: LanguageSpec, target_dir: str = "sbom"):
 if __name__ == "__main__":
     # download_git_repo()
     target_dir = "/sbom"
+    standard = SBOMStandard.spdx
     shutil.rmtree(target_dir, ignore_errors=True)
 
     # Empty the target directory
     for language in LanguageSpec:
         
-        run_sbom_tools(language, target_dir=target_dir)
+        run_sbom_tools(language, target_dir=target_dir, standard=standard)
         mean, std = analyse_sbom_diff_jaccard(language, target_dir=target_dir)
         print("Language:", language.name, "Mean:", mean, "Std:", std)
         

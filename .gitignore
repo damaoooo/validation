@@ -149,3 +149,9 @@ git_token
 
 # Remove .husky
 .husky/
+
+# Remove example folders
+example/
+
+# Remove tempCodeRunnerFile.py
+tempCodeRunnerFile.py

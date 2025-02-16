@@ -6,6 +6,10 @@ import re
 import json
 from prettytable import PrettyTable
 
+class SBOMStandard(Enum):
+    spdx = "spdx"
+    cyclonedx = "cyclonedx"
+
 class LanguageSpec(Enum):
     python = ["poetry.lock", "pyproject.toml"]
     rust = ["Cargo.lock", "Cargo.toml"]
