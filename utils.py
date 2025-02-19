@@ -6,6 +6,10 @@ import re
 import json
 from prettytable import PrettyTable
 
+class SBOMFileMode(Enum):
+    lock = "lock"
+    project = "project"
+
 class SBOMStandard(Enum):
     spdx = "spdx"
     cyclonedx = "cyclonedx"

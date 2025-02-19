@@ -1,0 +1,17 @@
+diff --git a/pkg/dependency/parser/python/poetry/parse.go b/pkg/dependency/parser/python/poetry/parse.go
+index 8b06942d3..95978bf52 100644
+--- a/pkg/dependency/parser/python/poetry/parse.go
++++ b/pkg/dependency/parser/python/poetry/parse.go
+@@ -50,9 +50,9 @@ func (p *Parser) Parse(r xio.ReadSeekerAt) ([]ftypes.Package, []ftypes.Dependenc
+ 	var pkgs []ftypes.Package
+ 	var deps []ftypes.Dependency
+ 	for _, pkg := range lockfile.Packages {
+-		if pkg.Category == "dev" {
+-			continue
+-		}
++		// if pkg.Category == "dev" {
++		// 	continue
++		// }
+ 
+ 		pkgID := packageID(pkg.Name, pkg.Version)
+ 		pkgs = append(pkgs, ftypes.Package{
