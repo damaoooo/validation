@@ -23,7 +23,7 @@ This toolkit provides a complete suite of tools for:
 
 ```bash
 # Clone the repository
-git clone <your-repo-url>
+git clone <this-repo-url>
 cd validation
 
 # Install dependencies
