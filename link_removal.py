@@ -7,7 +7,7 @@ from pathlib import Path
 from rich.logging import RichHandler
 import shutil
 
-# 配置日志记录，使用 RichHandler 以获得更好的终端显示效果
+# Configure logging to use RichHandler for better terminal display
 logging.basicConfig(
     level=logging.INFO,
     format="%(message)s",
@@ -17,7 +17,7 @@ logging.basicConfig(
 
 logger = logging.getLogger("replace-symlinks")
 
-# Emoji 前缀映射
+# Emoji prefix mapping
 LOG_EMOJIS = {
     'INFO': "ℹ️",
     'SUCCESS': "✅",
@@ -31,36 +31,38 @@ def get_emoji(level):
 def replace_symlink_with_cp(file_path):
     try:
         if not os.path.islink(file_path):
-            # logger.warning(f"{get_emoji('WARNING')} {file_path} 不是一个符号链接。跳过。")
-            return False
+            # logger.warning(f"{get_emoji('WARNING')} {file_path} is not a symbolic link. Skip.")
+            return True
 
-        # 获取符号链接指向的目标
+        # Get the target that the symbolic link points to
         target = os.readlink(file_path)
 
-        # 处理相对路径
+        # Handle relative paths
         if not os.path.isabs(target):
             target = os.path.join(os.path.dirname(file_path), target)
             target = os.path.abspath(target)
 
         if not os.path.exists(target):
-            # logger.error(f"{get_emoji('ERROR')} 目标文件不存在：{target}，跳过 {file_path}")
+            # logger.error(f"{get_emoji('ERROR')} Target file does not exist: {target}, skip {file_path}")
             return False
 
         if not os.path.isfile(target):
-            # logger.error(f"{get_emoji('ERROR')} 目标不是一个常规文件：{target}，跳过 {file_path}")
+            # logger.error(f"{get_emoji('ERROR')} Target is not a regular file: {target}, skip {file_path}")
             return False
 
-        # 使用 cp 命令覆盖符号链接
-        # 使用 shutil 复制文件并覆盖原有的符号链接
+        # Use cp command to overwrite symbolic link
+        # Use shutil to copy file and overwrite existing symbolic link
+        if os.path.islink(file_path):
+            os.unlink(file_path)  # Delete symbolic link
         shutil.copy2(target, file_path)
 
-        logger.info(f"{get_emoji('SUCCESS')} 成功将 {file_path} 替换为 {target}")
+        logger.info(f"{get_emoji('SUCCESS')} Successfully replaced {file_path} with {target}")
         return True
 
     except subprocess.CalledProcessError as e:
-        logger.error(f"{get_emoji('ERROR')} 复制失败：{e}，文件：{file_path}")
+        logger.error(f"{get_emoji('ERROR')} Copy failed: {e}, file: {file_path}")
     except Exception as e:
-        logger.error(f"{get_emoji('ERROR')} 处理 {file_path} 时发生错误：{e}")
+        logger.error(f"{get_emoji('ERROR')} Error occurred while processing {file_path}: {e}")
     return False
 
 def traverse_and_replace(root_dir):
@@ -77,21 +79,21 @@ def traverse_and_replace(root_dir):
                 else:
                     fail_count += 1
 
-    logger.info(f"{get_emoji('INFO')} 处理完成：成功 {success_count} 个，失败 {fail_count} 个。")
+    logger.info(f"{get_emoji('INFO')} Processing completed: {success_count} successful, {fail_count} failed.")
 
 def main():
-    # 获取目标目录，默认使用当前工作目录
+    # Get target directory, default to current working directory
     if len(sys.argv) > 1:
         root_dir = sys.argv[1]
     else:
         root_dir = os.getcwd()
 
-    # 检查目标目录是否存在
+    # Check if target directory exists
     if not os.path.isdir(root_dir):
-        logger.error(f"{get_emoji('ERROR')} 目录不存在：{root_dir}")
+        logger.error(f"{get_emoji('ERROR')} Directory does not exist: {root_dir}")
         sys.exit(1)
 
-    logger.info(f"{get_emoji('INFO')} 开始处理目录：{root_dir}")
+    logger.info(f"{get_emoji('INFO')} Start processing directory: {root_dir}")
     traverse_and_replace(root_dir)
 
 if __name__ == "__main__":

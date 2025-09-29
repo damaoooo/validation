@@ -134,7 +134,7 @@ sbom/
 .vscode/
 
 # Remove useless profiles and json
-*.json
+# *.json
 *.svg
 
 # Remove the git_token

@@ -20,9 +20,9 @@ def get_rate_limit_status(token=None):
     else:
         raise Exception(f"Failed to fetch rate limit status: {response.status_code}")
 
-# 示例用法
+# Example usage
 if __name__ == "__main__":
-    # 如果有 GitHub 个人访问令牌，请将其替换到下面的字符串中
+    # If you have a GitHub personal access token, replace it in the string below
     token = get_git_token()
     get_rate_limit_status(token)
 

@@ -1,0 +1,13 @@
+{
+  "SchemaVersion": 2,
+  "CreatedAt": "2025-09-29T17:39:10.807115984+03:00",
+  "ArtifactName": "trivy-sbom.json",
+  "ArtifactType": "cyclonedx",
+  "Results": [
+    {
+      "Target": "poetry.lock",
+      "Class": "lang-pkgs",
+      "Type": "poetry"
+    }
+  ]
+}

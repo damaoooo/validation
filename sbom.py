@@ -70,16 +70,18 @@ class SBOM:
 
 
 class SBOMTool:
-    def __init__(self, name: str, standard: SBOMStandard = SBOMStandard.cyclonedx):
+    def __init__(self, name: str, binary_path: str, standard: SBOMStandard = SBOMStandard.cyclonedx):
         self.name = name
         self.standard = standard
-
+        self.binary_path = binary_path
+        
     def run(self, input_path: str, output_path: str):
         raise NotImplementedError("Subclasses must implement this method.")
 
+
 class Trivy(SBOMTool):
     def __init__(self, standard: SBOMStandard = SBOMStandard.cyclonedx):
-        super().__init__("Trivy", standard)
+        super().__init__("Trivy", "trivy", standard)
 
     def run(self, input_path: str, output_path: str):
         # "/root/workspace/trivy/cmd/trivy/trivy"
@@ -92,7 +94,7 @@ class Trivy(SBOMTool):
             case _:
                 raise ValueError(f"Unsupported standard: {self.standard}")
 
-        cmd = ["/root/workspace/trivy/cmd/trivy/trivy", "fs", "--format", format_string, "--output", output_path, input_path, "-q"]
+        cmd = [self.binary_path, "fs", "--format", format_string, "--output", output_path, input_path, "-q"]
         try:
             result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, text=True)
         except subprocess.CalledProcessError as e:
@@ -102,7 +104,7 @@ class Trivy(SBOMTool):
 
 class Syft(SBOMTool):
     def __init__(self, standard: SBOMStandard = SBOMStandard.cyclonedx):
-        super().__init__("Syft", standard)
+        super().__init__("Syft", "syft", standard)
 
     def run(self, input_path: str, output_path: str):
         match self.standard:
@@ -113,7 +115,7 @@ class Syft(SBOMTool):
             case _:
                 raise ValueError(f"Unsupported standard: {self.standard}")
 
-        cmd = ["syft", "scan", input_path, "-o", f"{format_string}={output_path}", "-q"]
+        cmd = [self.binary_path, "scan", input_path, "-o", f"{format_string}={output_path}", "-q"]
         try:
             result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, text=True)
         except subprocess.CalledProcessError as e:
@@ -252,7 +254,7 @@ class SBOMComparer:
         self.raw_path = raw_dir
         self.diff_path = diff_dir
 
-    def compare(self, input_file: str, save=True) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    def compare(self, input_file: str, repo_path: str = "/data/sbom", save=True) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         """
         Main entry point for comparing SBOMs. This will:
         - Run Trivy and Syft
@@ -266,12 +268,12 @@ class SBOMComparer:
         if os.path.islink(input_file):
             input_file = os.path.realpath(input_file)
             
-        def extract_first_level_directory(path, base='/repo'):
-            # 获取相对路径
+        def extract_first_level_directory(path, base=repo_path):
+            # Get relative path
             relative_path = os.path.relpath(path, base)
-            # 拆分路径为各级目录
+            # Split path into directory levels
             parts = relative_path.split(os.sep)
-            # 返回第一级目录名称
+            # Return first level directory name
             return parts[0] if parts else None
         
         language = extract_first_level_directory(input_file)

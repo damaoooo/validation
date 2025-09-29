@@ -6,33 +6,11 @@ from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn, SpinnerColumn
 from rich.logging import RichHandler
 from logging.handlers import RotatingFileHandler
-from utils import LanguageSpec
-import argparse
+from utils import LanguageSpec, is_poetry_project
+import typer
 from typing import Union, List
 
-def parse_args():
-    parser = argparse.ArgumentParser(description="Generate lock files for specified languages.")
-    parser.add_argument(
-        "-l", "--language",
-        choices=[lang.name for lang in LanguageSpec] + ["all"],
-        default="all",
-        help="Specify the language to generate lock files for. Default is 'all'."
-    )
-    parser.add_argument(
-        "-m", "--multiprocessing",
-        action="store_true",
-        help="Use multiprocessing for lock generation. Default is False (use multithreading)."
-    )
-    # Add a path
-    parser.add_argument(
-        "-p", "--path",
-        default=os.getcwd(),
-        help="Specify the path to search for projects. Default is the current working directory."
-    )
-    return parser.parse_args()
-
-
-# 配置日志记录，使用 RichHandler 以获得更好的终端显示效果
+# Configure logging to use RichHandler for better terminal display
 logging.basicConfig(
     level=logging.INFO,
     format="%(message)s",
@@ -42,7 +20,7 @@ logging.basicConfig(
 
 logger = logging.getLogger("lock-generator")
 
-# Emoji 前缀映射
+# Emoji prefix mapping
 LOG_EMOJIS = {
     'INFO': "ℹ️",
     'DEBUG': "🐛",
@@ -75,39 +53,26 @@ class LockGenerator:
             try:
                 match self.language:
                     case LanguageSpec.python:
+                        # Only handle real Poetry projects and run lock directly
+                        if not is_poetry_project(proj_file):
+                            logger.warning(f"{get_emoji('WARNING')} {proj_file} in {pwd} is not a Poetry project. Skipping.")
+                            return False
+
+                        logger.info(f"{get_emoji('LOCK')} Generating Poetry lock file 🗝️")
                         try:
-                            logger.debug(f"{get_emoji('INIT')} Initializing Poetry project")
-                            result = subprocess.run(
-                                ["poetry", "init", "-n"],
+                            lock_result = subprocess.run(
+                                ["poetry", "lock"],
                                 check=True,
                                 stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE,
                                 text=True
                             )
-                            logger.debug(f"{get_emoji('DEBUG')} Poetry init output: {result.stdout.strip()}")
+                            logger.debug(f"{get_emoji('DEBUG')} Poetry lock output: {lock_result.stdout.strip()}")
                         except subprocess.CalledProcessError as e:
                             stderr = e.stderr.strip()
-                            if "already exists" in stderr:
-                                logger.info(f"{get_emoji('INFO')} Poetry project already initialized.")
-                            else:
-                                logger.error(f"{get_emoji('ERROR')} Poetry init failed: {pwd}:\n{stderr}")
-                                return False
-                        finally:
-                            logger.info(f"{get_emoji('LOCK')} Generating Poetry lock file 🗝️")
-                            try:
-                                lock_result = subprocess.run(
-                                    ["poetry", "lock"],
-                                    check=True,
-                                    stdout=subprocess.PIPE,
-                                    stderr=subprocess.PIPE,
-                                    text=True
-                                )
-                                logger.debug(f"{get_emoji('DEBUG')} Poetry lock output: {lock_result.stdout.strip()}")
-                            except subprocess.CalledProcessError as e:
-                                stderr = e.stderr.strip()
-                                logger.error(f"{get_emoji('ERROR')} Poetry lock failed: {stderr}")
-                                print(f"{get_emoji('ERROR')} Poetry lock failed in {pwd}:\n{stderr}")
-                                return False
+                            logger.error(f"{get_emoji('ERROR')} Poetry lock failed: {stderr}")
+                            print(f"{get_emoji('ERROR')} Poetry lock failed in {pwd}:\n{stderr}")
+                            return False
                     case LanguageSpec.rust:
                         logger.info(f"{get_emoji('LOCK')} Generating Cargo lock file 🗝️")
                         try:
@@ -155,7 +120,7 @@ class LockGenerator:
                             return False
                     case LanguageSpec.php:
                         logger.info(f"{get_emoji('LOCK')} Generating Composer lock file 🗝️")
-                        # 注意，这将安装所有依赖项，可能需要较长时间和大量空间
+                        # Note: This will install all dependencies, may take a long time and require a lot of space
                         try:
                             composer_result = subprocess.run(
                                 ["composer", "install", "--no-interaction"],
@@ -168,6 +133,21 @@ class LockGenerator:
                         except subprocess.CalledProcessError as e:
                             stderr = e.stderr.strip()
                             logger.error(f"{get_emoji('ERROR')} Composer install failed: {pwd}:\n{stderr}")
+                            return False
+                    case LanguageSpec.go:
+                        logger.info(f"{get_emoji('LOCK')} Generating Go modules lock file 🗝️ {pwd}")
+                        try:
+                            go_result = subprocess.run(
+                                ["go", "mod", "tidy"],
+                                check=True,
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE,
+                                text=True
+                            )
+                            logger.debug(f"{get_emoji('DEBUG')} Go mod tidy output: {go_result.stdout.strip()}")
+                        except subprocess.CalledProcessError as e:
+                            stderr = e.stderr.strip()
+                            logger.error(f"{get_emoji('ERROR')} Go mod tidy failed: {pwd}:\n{stderr}")
                             return False
                     case _:
                         logger.warning(f"{get_emoji('WARNING')} Lock generation not implemented for {self.language.name}")
@@ -274,24 +254,42 @@ class LockManager:
 
         logger.info(f"{get_emoji('SUCCESS')} Lock generation process completed.")
 
+# Move Typer app and main to module level for importability
+app = typer.Typer(help="Generate lock files for specified languages.")
 
-
-
-
-if __name__ == "__main__":
-    # 示例用法：
-    # 要使用多进程，将 use_multiprocessing 设置为 True
-    # 要使用多线程，将 use_multiprocessing 设置为 False
-    args = parse_args()
-    language: Union[str, LanguageSpec] = args.language
-    multiprocessing: bool = args.multiprocessing
-    path: str = args.path
+@app.command()
+def main(
+    language: str = typer.Option(
+        "all",
+        "-l",
+        "--language",
+        help="Specify the language to generate lock files for. Default is 'all'. Allowed: " + ", ".join([lang.name for lang in LanguageSpec]) + " or 'all'."
+    ),
+    multiprocessing: bool = typer.Option(
+        False,
+        "-m",
+        "--multiprocessing",
+        help="Use multiprocessing for lock generation. Default is False (use multithreading)."
+    ),
+    path: str = typer.Option(
+        os.getcwd(),
+        "-p",
+        "--path",
+        help="Specify the path to search for projects. Default is the current working directory."
+    ),
+):
+    allowed = [lang.name for lang in LanguageSpec] + ["all"]
+    if language not in allowed:
+        raise typer.BadParameter(f"language must be one of: {', '.join(allowed)}")
 
     if language == "all":
         languages = list(LanguageSpec)
     else:
-        languages = [LanguageSpec[args.language]]
+        languages = [LanguageSpec[language]]
 
-    lock_manager = LockManager(path,  use_multiprocessing=multiprocessing)
-
+    lock_manager = LockManager(path, use_multiprocessing=multiprocessing)
     lock_manager.generate_locks(languages)
+
+
+if __name__ == "__main__":
+    app()

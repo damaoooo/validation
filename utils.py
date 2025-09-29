@@ -5,6 +5,7 @@ import tomllib
 import re
 import json
 from prettytable import PrettyTable
+import toml
 
 class SBOMFileMode(Enum):
     lock = "lock"
@@ -17,9 +18,10 @@ class SBOMStandard(Enum):
 class LanguageSpec(Enum):
     python = ["poetry.lock", "pyproject.toml"]
     rust = ["Cargo.lock", "Cargo.toml"]
-    # javascript = ["yarn.lock", "package.json"]
+    javascript = ["package-lock.json", "package.json"]
     ruby = ["Gemfile.lock", "Gemfile", ".gemspec"]
     php = ["composer.lock", "composer.json"]
+    go = ["go.sum", "go.mod"]
 
     @property
     def file_names(self) -> List[str]:
@@ -30,8 +32,17 @@ awesome_dict = {
     "rust": "https://raw.githubusercontent.com/rust-unofficial/awesome-rust/refs/heads/main/README.md",
     "javascript": "https://raw.githubusercontent.com/sorrycc/awesome-javascript/refs/heads/master/README.md",
     "ruby": "https://raw.githubusercontent.com/markets/awesome-ruby/refs/heads/master/README.md",
-    "php": "https://raw.githubusercontent.com/ziadoz/awesome-php/refs/heads/master/README.md"
+    "php": "https://raw.githubusercontent.com/ziadoz/awesome-php/refs/heads/master/README.md",
+    "go": "https://raw.githubusercontent.com/avelino/awesome-go/refs/heads/main/README.md"
 }
+
+def is_poetry_project(pyproject_path: str) -> bool:
+    """Check if pyproject.toml is a poetry project"""
+    try:
+        data = toml.load(pyproject_path)
+        return "tool" in data and "poetry" in data["tool"]
+    except Exception:
+        return False
     
 def count_files(root_dir, proj_file: str, lock_file: str):
     proj_file_count = 0
@@ -58,15 +69,15 @@ def print_stat_table():
     table = PrettyTable()
     table.field_names = ["Language", "Project File Only", "Lock File Only", "Both", "Total"]
 
-    # 遍历 LanguageSpec 枚举，统计文件数量并添加到表格中
+    # Iterate through LanguageSpec enum, count files and add to table
     for lang in LanguageSpec:
         name = lang.name
         lock_file, proj_file = lang.file_names[:2]
-        root_dir = os.path.join("/repo", name)
+        root_dir = os.path.join("/data/sbom", name)
         proj_file_count, lock_file_count, both_files_count = count_files(root_dir, proj_file, lock_file)
         table.add_row([name, proj_file_count, lock_file_count, both_files_count, proj_file_count + lock_file_count + both_files_count])
 
-    # 打印表格
+    # Print table
     print(table)
     
 def read_cargo_lock(file_path: str):
@@ -111,17 +122,17 @@ def read_gemfile_lock(file_path):
     with open(file_path, 'r', encoding='utf-8') as file:
         content = file.read()
     
-    # 使用正则表达式匹配 gem 名称和版本
+    # Use regex to match gem names and versions
     pattern = re.compile(r'^\s{4}(\S+)\s\(([^)]+)\)', re.MULTILINE)
     matches = pattern.findall(content)
     
-    # 构建包含 gem 名称和版本的列表
+    # Build list containing gem names and versions
     package_list = [{'name': name, 'version': version} for name, version in matches]
     
     return package_list
     
 def get_git_token():
-    with open("/root/workspace/validation/git_token") as f:
+    with open("./git_token") as f:
         return f.read().strip()
 
 def parse_ground_truth(path: str, language: LanguageSpec):

@@ -12,8 +12,9 @@ from utils import SBOMStandard, SBOMFileMode
 
 
 class SBOMAnalyzer:
-    def __init__(self, target_dir: str = "/sbom", standard: SBOMStandard = SBOMStandard.cyclonedx, mode: SBOMFileMode = SBOMFileMode.lock):
-        self.target_dir = target_dir
+    def __init__(self, sbom_dir: str = "/sbom", input_dir: str = "/repo", standard: SBOMStandard = SBOMStandard.cyclonedx, mode: SBOMFileMode = SBOMFileMode.lock):
+        self.sbom_dir = sbom_dir
+        self.input_dir = input_dir
         self.standard = standard
         self.syft = Syft(standard=standard)
         self.trivy = Trivy(standard=standard)
@@ -29,13 +30,13 @@ class SBOMAnalyzer:
             'accuracy': {'left': left, 'right': right, 'common': common}
         }
 
-    def _run_sbom_tools(self, language: LanguageSpec, repo_path: str = "/repo"):
-        output_dir = os.path.join(self.target_dir, language.name)
+    def _run_sbom_tools(self, language: LanguageSpec):
+        output_dir = os.path.join(self.sbom_dir, language.name)
         comparer = SBOMComparer(trivy=self.trivy, syft=self.syft, output_dir=output_dir)
         lock_files = []
         # os walk a folder
-        for root, dirs, files in os.walk(os.path.join(repo_path, language.name)):
-            if root[len(repo_path):].count(os.sep) > 3:
+        for root, dirs, files in os.walk(os.path.join(self.input_dir, language.name)):
+            if root[len(self.input_dir):].count(os.sep) > 3:
                 continue
             for file in files:
                 if self.mode == SBOMFileMode.project:
@@ -55,7 +56,7 @@ class SBOMAnalyzer:
 
     def _analyze_jaccard_similarity(self, language: LanguageSpec):
         jaccords = []
-        output_folder = os.path.join(self.target_dir, language.name, "diff")
+        output_folder = os.path.join(self.sbom_dir, language.name, "diff")
         for root, dirs, files in os.walk(output_folder):
             for file in files:
                 if file.endswith(".json"):
@@ -77,7 +78,7 @@ class SBOMAnalyzer:
         left_len = []
         right_len = []
         common_len = []
-        output_folder = os.path.join(self.target_dir, language.name, "diff")
+        output_folder = os.path.join(self.sbom_dir, language.name, "diff")
         for root, dirs, files in os.walk(output_folder):
             for file in files:
                 if file.endswith(".json"):
@@ -152,14 +153,14 @@ class DataProcessor:
 def main():
     # Initialize analyzer
     sbom_standard = SBOMStandard.cyclonedx
-    sbom_mode = SBOMFileMode.project
+    sbom_mode = SBOMFileMode.lock
     
     # FIXME: Only find valid project file which can be used to generate a lock file
-    
-    analyzer = SBOMAnalyzer(target_dir="/sbom", standard=sbom_standard, mode=sbom_mode)
-    
+
+    analyzer = SBOMAnalyzer(input_dir="/data/sbom", sbom_dir="/home/damaoooo/sbom",standard=sbom_standard, mode=sbom_mode)
+
     # Clean target directory
-    shutil.rmtree(analyzer.target_dir, ignore_errors=True)
+    # shutil.rmtree(analyzer.target_dir, ignore_errors=True)
     
     # Analyze for each language
     for language in LanguageSpec:

@@ -1,0 +1,9 @@
+rich
+prettytable
+requests
+pandas
+tqdm
+aiohttp
+gitpython
+numpy
+typer
