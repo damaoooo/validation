@@ -74,6 +74,7 @@ target/
 
 # Jupyter Notebook
 .ipynb_checkpoints
+test.ipynb
 
 # IPython
 profile_default/
@@ -155,3 +156,6 @@ example/
 
 # Remove tempCodeRunnerFile.py
 tempCodeRunnerFile.py
+
+*.json
+*.png

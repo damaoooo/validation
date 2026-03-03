@@ -94,7 +94,7 @@ class Trivy(SBOMTool):
             case _:
                 raise ValueError(f"Unsupported standard: {self.standard}")
 
-        cmd = [self.binary_path, "fs", "--format", format_string, "--output", output_path, input_path, "-q"]
+        cmd = [self.binary_path, "fs", "--format", format_string, "--output", output_path, "-q", "--include-dev-deps", input_path]
         try:
             result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, text=True)
         except subprocess.CalledProcessError as e:

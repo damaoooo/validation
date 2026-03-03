@@ -1,12 +1,16 @@
 import os
+import pwd
 import subprocess
 import logging
-from multiprocessing import Pool, Manager
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn, SpinnerColumn
 from rich.logging import RichHandler
 from logging.handlers import RotatingFileHandler
+
+import toml
 from utils import LanguageSpec, is_poetry_project
+from pathlib import Path
+import tomllib
 import typer
 from typing import Union, List
 
@@ -32,8 +36,86 @@ LOG_EMOJIS = {
     'INIT': "🚀"
 }
 
+custom_env = os.environ.copy()
+custom_env["POETRY_PACKAGE_MODE"] = "false" # 解决你遇到的这个报错
+custom_env["POETRY_VIRTUALENVS_CREATE"] = "false" # SBOM 分析通常不需要真的建虚拟环境
+
 def get_emoji(level):
     return LOG_EMOJIS.get(level, "ℹ️")
+
+def fix_pyproject_metadata(pwd):
+    """
+    精确补全逻辑：根据已有字段的位置补全缺失字段，不乱跨节补充。
+    """
+    toml_path = Path(pwd) / "pyproject.toml"
+    if not toml_path.exists():
+        return False
+
+    try:
+        with open(toml_path, "r", encoding="utf-8") as f:
+            data = toml.load(f)
+
+        changed = False
+        
+        # 1. 检测字段位置
+        # [project] 节
+        p_has_name = "name" in data.get("project", {})
+        p_has_version = "version" in data.get("project", {})
+        
+        # [tool.poetry] 节
+        poetry_sec = data.get("tool", {}).get("poetry", {})
+        tp_has_name = "name" in poetry_sec
+        tp_has_version = "version" in poetry_sec
+
+        # 2. 计算补全状态
+        any_name = p_has_name or tp_has_name
+        any_version = p_has_version or tp_has_version
+
+        # 3. 执行“补齐对应”逻辑
+        if not (any_name and any_version):
+            # 情况：两个都没，默认补 [project]
+            if not any_name and not any_version:
+                if "project" not in data: data["project"] = {}
+                data["project"]["name"] = Path(pwd).name
+                data["project"]["version"] = "0.1.0"
+                changed = True
+            
+            # 情况：缺 name，找 version 的位置来补
+            elif not any_name:
+                # 优先根据 project.version 补 project.name
+                if p_has_version:
+                    data["project"]["name"] = Path(pwd).name
+                else: # 只能是 tp_has_version 有，补在 tool.poetry
+                    if "tool" not in data: data["tool"] = {}
+                    if "poetry" not in data["tool"]: data["tool"]["poetry"] = {}
+                    data["tool"]["poetry"]["name"] = Path(pwd).name
+                changed = True
+            
+            # 情况：缺 version，找 name 的位置来补
+            elif not any_version:
+                # 优先根据 project.name 补 project.version
+                if p_has_name:
+                    data["project"]["version"] = "0.1.0"
+                else: # 只能是 tp_has_name 有，补在 tool.poetry
+                    if "tool" not in data: data["tool"] = {}
+                    if "poetry" not in data["tool"]: data["tool"]["poetry"] = {}
+                    data["tool"]["poetry"]["version"] = "0.1.0"
+                changed = True
+
+        if changed:
+            with open(toml_path, "w", encoding="utf-8") as f:
+                toml.dump(data, f)
+            return True
+
+    except Exception:
+        # 极端情况：文件损坏或无法解析，追加一个最基础的 [project]
+        with open(toml_path, "a", encoding="utf-8") as f:
+            f.write('\n[project]\nname = "{}"\nversion = "0.1.0"\n'.format(Path(pwd).name))
+            f.write('[tool.poetry]\npackage-mode = false\n')
+        return True
+
+    return False
+
 
 class LockGenerator:
     def __init__(self, language: LanguageSpec):
@@ -55,23 +137,42 @@ class LockGenerator:
                     case LanguageSpec.python:
                         # Only handle real Poetry projects and run lock directly
                         if not is_poetry_project(proj_file):
-                            logger.warning(f"{get_emoji('WARNING')} {proj_file} in {pwd} is not a Poetry project. Skipping.")
+                            logger.debug(f"{get_emoji('WARNING')} {proj_file} in {pwd} is not a Poetry project. Skipping.")
                             return False
 
-                        logger.info(f"{get_emoji('LOCK')} Generating Poetry lock file 🗝️")
+                        logger.warning(f"{get_emoji('LOCK')} Generating Poetry lock file 🗝️")
+                        lock_success = False
                         try:
+                            fix_pyproject_metadata(pwd)
                             lock_result = subprocess.run(
                                 ["poetry", "lock"],
                                 check=True,
                                 stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE,
-                                text=True
+                                env=custom_env,
+                                text=True,
+                                cwd=pwd
                             )
                             logger.debug(f"{get_emoji('DEBUG')} Poetry lock output: {lock_result.stdout.strip()}")
+                            lock_success = True
                         except subprocess.CalledProcessError as e:
                             stderr = e.stderr.strip()
                             logger.error(f"{get_emoji('ERROR')} Poetry lock failed: {stderr}")
                             print(f"{get_emoji('ERROR')} Poetry lock failed in {pwd}:\n{stderr}")
+                        finally:
+                            # 用 git restore 还原 pyproject.toml 到修改前的状态
+                            restore_result = subprocess.run(
+                                ["git", "restore", "pyproject.toml"],
+                                cwd=pwd,
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE,
+                                text=True
+                            )
+                            if restore_result.returncode == 0:
+                                logger.debug(f"{get_emoji('DEBUG')} git restore pyproject.toml in {pwd}")
+                            else:
+                                logger.warning(f"{get_emoji('WARNING')} git restore failed in {pwd}: {restore_result.stderr.strip()}")
+                        if not lock_success:
                             return False
                     case LanguageSpec.rust:
                         logger.info(f"{get_emoji('LOCK')} Generating Cargo lock file 🗝️")
@@ -167,14 +268,17 @@ class LockGenerator:
             logger.debug(f"{get_emoji('DEBUG')} Reverted directory to {original_dir}")
 
 
+def _generate_lock_worker(language: LanguageSpec, folder: str) -> bool:
+    """Module-level worker function so ProcessPoolExecutor can pickle it without pickling LockManager."""
+    return LockGenerator(language).generate_lock(folder)
+
+
 class LockManager:
     def __init__(self, pwd: str = os.getcwd(), use_multiprocessing: bool = True):
         self.pwd = pwd
         self.use_multiprocessing = use_multiprocessing
-        self.lock_generators = {language: LockGenerator(language) for language in LanguageSpec}
-        self.manager = Manager()
-        self.success_counts = self.manager.dict({language: 0 for language in LanguageSpec})
-        self.fail_counts = self.manager.dict({language: 0 for language in LanguageSpec})
+        self.success_counts = {language: 0 for language in LanguageSpec}
+        self.fail_counts = {language: 0 for language in LanguageSpec}
 
     def find_folders(self, language: LanguageSpec):
         lock_file, proj_file = language.file_names[:2]
@@ -194,17 +298,6 @@ class LockManager:
 
         return target_folders
 
-    def update_counts(self, language: LanguageSpec, success: bool):
-        if success:
-            self.success_counts[language] += 1
-        else:
-            self.fail_counts[language] += 1
-
-    def process_folder(self, language: LanguageSpec, folder: str):
-        lock_generator = self.lock_generators[language]
-        success = lock_generator.generate_lock(folder)
-        self.update_counts(language, success)
-        return success
 
     def generate_locks(self, languages: List[LanguageSpec]):
         os.chdir(self.pwd)
@@ -237,12 +330,17 @@ class LockManager:
                     executor_cls = ThreadPoolExecutor
 
                 with executor_cls(max_workers=os.cpu_count()) as executor:
-                    futures = {executor.submit(self.process_folder, language, folder): folder for folder in folders}
+                    futures = {executor.submit(_generate_lock_worker, language, folder): folder for folder in folders}
                     for future in futures:
+                        folder = futures[future]
                         try:
-                            future.result()
+                            success = future.result()
+                            if success:
+                                self.success_counts[language] += 1
+                            else:
+                                self.fail_counts[language] += 1
                         except Exception as e:
-                            folder = futures[future]
+                            self.fail_counts[language] += 1
                             logger.error(f"{get_emoji('ERROR')} Error processing folder {folder}: {e}")
                             print(f"{get_emoji('ERROR')} Error processing folder {folder}:\n{e}")
                         finally:
